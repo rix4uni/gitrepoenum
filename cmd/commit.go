@@ -70,7 +70,8 @@ func scanRepos(inputDir string, dateFlag string, timeDirection string, outputDir
 				// Fetch commits
 				fmt.Printf("[FETCHING COMMITS] %s into %s\n", repoPath, outputFile)
 				if err := runGitLog(repoPath, dateFlag, timeDirection, outputFile); err != nil {
-					return err
+					fmt.Printf("[ERROR FETCHING COMMITS] %s: %v\n", repoPath, err)
+					continue
 				}
 			}
 		}
