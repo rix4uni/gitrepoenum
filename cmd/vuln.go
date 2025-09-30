@@ -47,8 +47,8 @@ $ gitrepoenum vuln -i ~/allgithubrepo/commits -o ~/allgithubrepo/commits`,
 				}
 
 				// Run TruffleHog on the current repository
-				trufflehogCmd := exec.Command("trufflehog", "filesystem", repoPath)
-				trufflehogOutputFile := filepath.Join(vulnOutputPath, "trufflehog.txt")
+				trufflehogCmd := exec.Command("trufflehog", "filesystem", "--json", repoPath)
+				trufflehogOutputFile := filepath.Join(vulnOutputPath, "trufflehog.json")
 
 				// Redirect output to the output file
 				outputFile, err := os.Create(trufflehogOutputFile)
