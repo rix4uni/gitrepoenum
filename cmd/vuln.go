@@ -11,6 +11,7 @@ import (
 
 var inputDir string
 var outputDir string
+var Sendnotify string
 
 // vulnCmd represents the vuln command
 var vulnCmd = &cobra.Command{
@@ -21,7 +22,7 @@ and saves the results in the specified output directory.
 
 Examples:
 $ gitrepoenum vuln
-$ gitrepoenum vuln -i ~/allgithubrepo/commits -o ~/allgithubrepo/commits`,
+$ gitrepoenum vuln -i ~/allgithubrepo/commits -o ~/allgithubrepo/commits --id gitleaks`,
 	Run: func(cmd *cobra.Command, args []string) {
 		// Validate input and output directories
 		if inputDir == "" || outputDir == "" {
@@ -65,6 +66,15 @@ $ gitrepoenum vuln -i ~/allgithubrepo/commits -o ~/allgithubrepo/commits`,
 				}
 
 				fmt.Printf("[Scanned] %s and saved results to %s\n", repoPath, trufflehogOutputFile)
+			
+				// Send verified vulnerabilities to Discord
+				notifyCmd := exec.Command(
+					"bash", "-c",
+					fmt.Sprintf(`cat %s | jq -r 'select(.Verified==true) | "\(.DetectorName):\(.Raw)"' | notify -duc -silent -id %s &>/dev/null`, trufflehogOutputFile, Sendnotify),
+				)
+				if err := notifyCmd.Run(); err != nil {
+					fmt.Printf("Failed to send Discord notification for %s: %v\n", repoPath, err)
+				}
 			}
 			return nil
 		})
@@ -81,4 +91,5 @@ func init() {
 	// Define flags for input and output directories
 	vulnCmd.Flags().StringVarP(&inputDir, "input", "i", filepath.Join(os.Getenv("HOME"), "allgithubrepo", "commits"), "Input directory containing repositories code")
 	vulnCmd.Flags().StringVarP(&outputDir, "output", "o", filepath.Join(os.Getenv("HOME"), "allgithubrepo", "commits"), "Output directory for vulnerability reports")
+	vulnCmd.Flags().StringVar(&Sendnotify, "id", "", "Send verified vulnerabilities to Discord (required)")
 }
