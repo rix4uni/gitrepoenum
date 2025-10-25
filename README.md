@@ -18,6 +18,18 @@
   <a href="#workflow">Workflow</a>
 </p>
 
+## Prerequisites
+Before installing gitrepoenum, ensure you have:
+
+```
+TruffleHog (for vulnerability scanning):
+git clone https://github.com/trufflesecurity/trufflehog.git
+cd trufflehog; go install
+
+Notify (for Discord notifications):
+go install -v github.com/projectdiscovery/notify/cmd/notify@latest
+```
+
 ## Installation
 ```
 go install github.com/rix4uni/gitrepoenum@latest
