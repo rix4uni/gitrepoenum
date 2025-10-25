@@ -25,9 +25,9 @@ go install github.com/rix4uni/gitrepoenum@latest
 
 ## Download prebuilt binaries
 ```
-wget https://github.com/rix4uni/gitrepoenum/releases/download/v0.0.1/gitrepoenum-linux-amd64-0.0.1.tgz
-tar -xvzf gitrepoenum-linux-amd64-0.0.1.tgz
-rm -rf gitrepoenum-linux-amd64-0.0.1.tgz
+wget https://github.com/rix4uni/gitrepoenum/releases/download/v0.0.2/gitrepoenum-linux-amd64-0.0.2.tgz
+tar -xvzf gitrepoenum-linux-amd64-0.0.2.tgz
+rm -rf gitrepoenum-linux-amd64-0.0.2.tgz
 mv gitrepoenum ~/go/bin/gitrepoenum
 ```
 Or download [binary release](https://github.com/rix4uni/gitrepoenum/releases) for your platform.
@@ -39,16 +39,14 @@ cd gitrepoenum; go install
 ```
 
 ## Usage
-```console
-go run main.go -h
-
+```yaml
            _  __
    ____ _ (_)/ /_ _____ ___   ____   ____   ___   ____   __  __ ____ ___
   / __  // // __// ___// _ \ / __ \ / __ \ / _ \ / __ \ / / / // __  __ \
  / /_/ // // /_ / /   /  __// /_/ // /_/ //  __// / / // /_/ // / / / / /
  \__, //_/ \__//_/    \___// .___/ \____/ \___//_/ /_/ \__,_//_/ /_/ /_/
 /____/                    /_/
-                                         Current gitrepoenum version v0.0.1
+                                         Current gitrepoenum version v0.0.2
 
 A longer description that spans multiple lines and likely contains
 examples and usage of using your application. For example:
@@ -87,16 +85,14 @@ Use "gitrepoenum [command] --help" for more information about a command.
     <b>gitrepoenum org -h</b>
   </summary>
 
-```
-go run main.go org -h
-
+```yaml
            _  __
    ____ _ (_)/ /_ _____ ___   ____   ____   ___   ____   __  __ ____ ___
   / __  // // __// ___// _ \ / __ \ / __ \ / _ \ / __ \ / / / // __  __ \
  / /_/ // // /_ / /   /  __// /_/ // /_/ //  __// / / // /_/ // / / / / /
  \__, //_/ \__//_/    \___// .___/ \____/ \___//_/ /_/ \__,_//_/ /_/ /_/
 /____/                    /_/
-                                         Current gitrepoenum version v0.0.1
+                                         Current gitrepoenum version v0.0.2
 
 Examples:
 $ echo "IBM" | gitrepoenum org -c -o output.json
@@ -122,16 +118,14 @@ Flags:
     <b>gitrepoenum member -h</b>
   </summary>
 
-```
-go run main.go member -h
-
+```yaml
            _  __
    ____ _ (_)/ /_ _____ ___   ____   ____   ___   ____   __  __ ____ ___
   / __  // // __// ___// _ \ / __ \ / __ \ / _ \ / __ \ / / / // __  __ \
  / /_/ // // /_ / /   /  __// /_/ // /_/ //  __// / / // /_/ // / / / / /
  \__, //_/ \__//_/    \___// .___/ \____/ \___//_/ /_/ \__,_//_/ /_/ /_/
 /____/                    /_/
-                                         Current gitrepoenum version v0.0.1
+                                         Current gitrepoenum version v0.0.2
 
 Examples:
 $ echo "IBM" | gitrepoenum member -c -o output.json
@@ -157,16 +151,14 @@ Flags:
     <b>gitrepoenum user -h</b>
   </summary>
 
-```
-go run main.go user -h
-
+```yaml
            _  __
    ____ _ (_)/ /_ _____ ___   ____   ____   ___   ____   __  __ ____ ___
   / __  // // __// ___// _ \ / __ \ / __ \ / _ \ / __ \ / / / // __  __ \
  / /_/ // // /_ / /   /  __// /_/ // /_/ //  __// / / // /_/ // / / / / /
  \__, //_/ \__//_/    \___// .___/ \____/ \___//_/ /_/ \__,_//_/ /_/ /_/
 /____/                    /_/
-                                         Current gitrepoenum version v0.0.1
+                                         Current gitrepoenum version v0.0.2
 
 Fetch GitHub repositories of a single USER or multiple USERS using a list of usernames
 
@@ -194,16 +186,14 @@ Flags:
     <b>gitrepoenum download -h</b>
   </summary>
 
-```
-go run main.go download -h
-
+```yaml
            _  __
    ____ _ (_)/ /_ _____ ___   ____   ____   ___   ____   __  __ ____ ___
   / __  // // __// ___// _ \ / __ \ / __ \ / _ \ / __ \ / / / // __  __ \
  / /_/ // // /_ / /   /  __// /_/ // /_/ //  __// / / // /_/ // / / / / /
  \__, //_/ \__//_/    \___// .___/ \____/ \___//_/ /_/ \__,_//_/ /_/ /_/
 /____/                    /_/
-                                         Current gitrepoenum version v0.0.1
+                                         Current gitrepoenum version v0.0.2
 
 Clone Git repositories and customize the directory name to username-repositoryname with an option to clone in parallel.
 
@@ -230,16 +220,14 @@ Flags:
     <b>gitrepoenum commit -h</b>
   </summary>
 
-```
-go run main.go commit -h
-
+```yaml
            _  __
    ____ _ (_)/ /_ _____ ___   ____   ____   ___   ____   __  __ ____ ___
   / __  // // __// ___// _ \ / __ \ / __ \ / _ \ / __ \ / / / // __  __ \
  / /_/ // // /_ / /   /  __// /_/ // /_/ //  __// / / // /_/ // / / / / /
  \__, //_/ \__//_/    \___// .___/ \____/ \___//_/ /_/ \__,_//_/ /_/ /_/
 /____/                    /_/
-                                         Current gitrepoenum version v0.0.1
+                                         Current gitrepoenum version v0.0.2
 
 This command retrieves git commit logs based on date and time parameters.
 
@@ -276,16 +264,14 @@ Flags:
     <b>gitrepoenum code -h</b>
   </summary>
 
-```
-go run main.go code -h
-
+```yaml
            _  __
    ____ _ (_)/ /_ _____ ___   ____   ____   ___   ____   __  __ ____ ___
   / __  // // __// ___// _ \ / __ \ / __ \ / _ \ / __ \ / / / // __  __ \
  / /_/ // // /_ / /   /  __// /_/ // /_/ //  __// / / // /_/ // / / / / /
  \__, //_/ \__//_/    \___// .___/ \____/ \___//_/ /_/ \__,_//_/ /_/ /_/
 /____/                    /_/
-                                         Current gitrepoenum version v0.0.1
+                                         Current gitrepoenum version v0.0.2
 
 This command fetches code from multiple commits based on a list in commits.txt for each repository.
 
@@ -307,16 +293,14 @@ Flags:
     <b>gitrepoenum vuln -h</b>
   </summary>
 
-```
-go run main.go vuln -h
-
+```yaml
            _  __
    ____ _ (_)/ /_ _____ ___   ____   ____   ___   ____   __  __ ____ ___
   / __  // // __// ___// _ \ / __ \ / __ \ / _ \ / __ \ / / / // __  __ \
  / /_/ // // /_ / /   /  __// /_/ // /_/ //  __// / / // /_/ // / / / / /
  \__, //_/ \__//_/    \___// .___/ \____/ \___//_/ /_/ \__,_//_/ /_/ /_/
 /____/                    /_/
-                                         Current gitrepoenum version v0.0.1
+                                         Current gitrepoenum version v0.0.2
 
 This command scans multiple repositories for vulnerabilities using TruffleHog
 and saves the results in the specified output directory.
@@ -335,8 +319,72 @@ Flags:
 ```
 </details>
 
+<details>
+  <summary>
+    <b>gitrepoenum leaksmoniter -h</b>
+  </summary>
+
+```yaml
+           _  __
+   ____ _ (_)/ /_ _____ ___   ____   ____   ___   ____   __  __ ____ ___
+  / __  // // __// ___// _ \ / __ \ / __ \ / _ \ / __ \ / / / // __  __ \
+ / /_/ // // /_ / /   /  __// /_/ // /_/ //  __// / / // /_/ // / / / / /
+ \__, //_/ \__//_/    \___// .___/ \____/ \___//_/ /_/ \__,_//_/ /_/ /_/
+/____/                    /_/
+                                         Current gitrepoenum version v0.0.2
+
+A comprehensive tool to monitor GitHub organizations, users, and members
+for potential leaks and vulnerabilities using trufflehog scanning.
+
+Features:
+- Fetch repositories from organizations, users, and their members
+- Clone repositories with configurable depth and parallelism
+- Extract commits and code changes
+- Scan for vulnerabilities using trufflehog
+- Send notifications to Discord
+
+Examples:
+  # Complete automated workflow including vulnerability scanning
+  echo "Shopify" | gitrepoenum leaksmoniter --scan-repo org --date 24h
+
+  # Scan individual user repositories
+  echo "rix4uni" | gitrepoenum leaksmoniter --scan-repo user
+
+  # Scan both org and member repositories
+  cat orgnames.txt | gitrepoenum leaksmoniter --scan-repo org,member
+
+  # With Discord notifications for vulnerabilities
+  cat orgnames.txt | gitrepoenum leaksmoniter --scan-repo org,member --notifyid allvuln
+
+  # With custom base directory
+  cat orgnames.txt | gitrepoenum leaksmoniter --scan-repo org --download-dir ~/myrepos
+
+  # High parallelism for faster cloning
+  cat orgnames.txt | gitrepoenum leaksmoniter --parallel 20 --depth 10
+
+  # Scan recent repositories only (last 7 days)
+  echo "google" | gitrepoenum leaksmoniter --scan-repo org --date 7d
+
+  # Comprehensive scan with all options
+  echo "microsoft" | gitrepoenum leaksmoniter --scan-repo org,member,user --date 30d --parallel 15 --notifyid my-webhook
+
+Usage:
+  gitrepoenum leaksmoniter [flags]
+
+Flags:
+  -D, --date string           Specify the date range for repositories (e.g., 50s, 40m, 5h, 1d, 2w, 3M, 1y, all) (default "24h")
+  -d, --delay string          Delay between requests (e.g., 1ns, 1us, 1ms, 1s, 1m) (default "-1ns")
+  -z, --depth int             Git clone depth (default 5)
+  -o, --download-dir string   Base directory for downloads, commits, code, and vulnerabilities
+  -h, --help                  help for leaksmoniter
+  -n, --notifyid string       Send verified vulnerabilities to Discord (default "allvuln")
+  -p, --parallel int          Repositories to clone in parallel (default 10)
+  -s, --scan-repo string      Scan type: org, member, user (default "org,member")
+  -t, --token string          GitHub tokens file, 1 token per line (default "$HOME/.config/gitrepoenum/github-token.txt")
+```
+</details>
+
 ## Demo
-[asciinema Link](https://asciinema.org/~rix4uni)
 
 ## Workflow
 <p align="center"> 
@@ -344,9 +392,3 @@ Flags:
 <img src="Workflow/gitrepoenum.png"/>
 </a>  
 </p>
-
-## TODO
-
-
-## License
-This tool is open source and available under the [MIT License](/LICENSE).

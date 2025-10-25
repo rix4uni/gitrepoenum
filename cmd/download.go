@@ -15,8 +15,8 @@ import (
 
 // Define variables for directory, parallel, and depth flags
 var directory string
-var parallel int
-var depth int
+var downloadparallel int
+var downloaddepth int
 
 // downloadCmd represents the download command
 var downloadCmd = &cobra.Command{
@@ -47,7 +47,7 @@ $ cat reponames.txt | gitrepoenum download -d 1`,
 		}
 
 		// Create a semaphore channel to limit concurrent clones
-		sem := make(chan struct{}, parallel)
+		sem := make(chan struct{}, downloadparallel)
 		var wg sync.WaitGroup
 
 		for _, url := range repoURLs {
@@ -89,8 +89,8 @@ $ cat reponames.txt | gitrepoenum download -d 1`,
 
 				// Execute the git clone command with the custom directory name and depth option
 				cloneArgs := []string{"clone", url, dirName}
-				if depth > 0 {
-					cloneArgs = append(cloneArgs, "--depth", fmt.Sprintf("%d", depth))
+				if downloaddepth > 0 {
+					cloneArgs = append(cloneArgs, "--depth", fmt.Sprintf("%d", downloaddepth))
 				}
 				cloneCmd := exec.Command("git", cloneArgs...)
 
@@ -117,6 +117,6 @@ func init() {
 	rootCmd.AddCommand(downloadCmd)
 
 	downloadCmd.Flags().StringVarP(&directory, "output-directory", "o", filepath.Join(os.Getenv("HOME"), "allgithubrepo", "download"), "Directory to clone the repositories into")
-	downloadCmd.Flags().IntVarP(&parallel, "parallel", "p", 10, "Number of repositories to clone in parallel")
-	downloadCmd.Flags().IntVarP(&depth, "depth", "d", 0, "Create a shallow clone with a history truncated to the specified number of commits, use -d 1 if you want only latest commits")
+	downloadCmd.Flags().IntVarP(&downloadparallel, "parallel", "p", 10, "Number of repositories to clone in parallel")
+	downloadCmd.Flags().IntVarP(&downloaddepth, "depth", "d", 0, "Create a shallow clone with a history truncated to the specified number of commits, use -d 1 if you want only latest commits")
 }
