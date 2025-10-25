@@ -48,27 +48,23 @@ cd gitrepoenum; go install
 /____/                    /_/
                                          Current gitrepoenum version v0.0.2
 
-A longer description that spans multiple lines and likely contains
-examples and usage of using your application. For example:
-
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.
+A longer description of your application.
 
 Usage:
   gitrepoenum [flags]
   gitrepoenum [command]
 
 Available Commands:
-  code        Fetch code from multiple commits
-  commit      Show commit logs
-  completion  Generate the autocompletion script for the specified shell
-  download    Clone Git repositories with a custom directory name and parallel option
-  help        Help about any command
-  member      Fetch GitHub member name of a single ORG or multiple ORGS using a list of orgnames
-  org         Fetch GitHub repositories of a single ORG or multiple ORGS using a list of orgnames
-  user        Fetch GitHub repositories of a single USER or multiple USERS using a list of usernames
-  vuln        Scan repositories for vulnerabilities using TruffleHog
+  code         Fetch code from multiple commits
+  commit       Show commit logs
+  completion   Generate the autocompletion script for the specified shell
+  download     Clone Git repositories with a custom directory name and parallel option
+  help         Help about any command
+  leaksmoniter Monitor GitHub repositories for leaks and vulnerabilities
+  member       Fetch GitHub member name of a single ORG or multiple ORGS using a list of orgnames
+  org          Fetch GitHub repositories of a single ORG or multiple ORGS using a list of orgnames
+  user         Fetch GitHub repositories of a single USER or multiple USERS using a list of usernames
+  vuln         Scan repositories for vulnerabilities using TruffleHog
 
 Flags:
   -h, --help      help for gitrepoenum
