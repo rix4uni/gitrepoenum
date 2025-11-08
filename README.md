@@ -37,9 +37,9 @@ go install github.com/rix4uni/gitrepoenum@latest
 
 ## Download prebuilt binaries
 ```
-wget https://github.com/rix4uni/gitrepoenum/releases/download/v0.0.2/gitrepoenum-linux-amd64-0.0.2.tgz
-tar -xvzf gitrepoenum-linux-amd64-0.0.2.tgz
-rm -rf gitrepoenum-linux-amd64-0.0.2.tgz
+wget https://github.com/rix4uni/gitrepoenum/releases/download/v0.0.3/gitrepoenum-linux-amd64-0.0.3.tgz
+tar -xvzf gitrepoenum-linux-amd64-0.0.3.tgz
+rm -rf gitrepoenum-linux-amd64-0.0.3.tgz
 mv gitrepoenum ~/go/bin/gitrepoenum
 ```
 Or download [binary release](https://github.com/rix4uni/gitrepoenum/releases) for your platform.
@@ -58,7 +58,7 @@ cd gitrepoenum; go install
  / /_/ // // /_ / /   /  __// /_/ // /_/ //  __// / / // /_/ // / / / / /
  \__, //_/ \__//_/    \___// .___/ \____/ \___//_/ /_/ \__,_//_/ /_/ /_/
 /____/                    /_/
-                                         Current gitrepoenum version v0.0.2
+                                         Current gitrepoenum version v0.0.3
 
 A longer description of your application.
 
@@ -100,7 +100,7 @@ Use "gitrepoenum [command] --help" for more information about a command.
  / /_/ // // /_ / /   /  __// /_/ // /_/ //  __// / / // /_/ // / / / / /
  \__, //_/ \__//_/    \___// .___/ \____/ \___//_/ /_/ \__,_//_/ /_/ /_/
 /____/                    /_/
-                                         Current gitrepoenum version v0.0.2
+                                         Current gitrepoenum version v0.0.3
 
 Examples:
 $ echo "IBM" | gitrepoenum org -c -o output.json
@@ -133,7 +133,7 @@ Flags:
  / /_/ // // /_ / /   /  __// /_/ // /_/ //  __// / / // /_/ // / / / / /
  \__, //_/ \__//_/    \___// .___/ \____/ \___//_/ /_/ \__,_//_/ /_/ /_/
 /____/                    /_/
-                                         Current gitrepoenum version v0.0.2
+                                         Current gitrepoenum version v0.0.3
 
 Examples:
 $ echo "IBM" | gitrepoenum member -c -o output.json
@@ -166,7 +166,7 @@ Flags:
  / /_/ // // /_ / /   /  __// /_/ // /_/ //  __// / / // /_/ // / / / / /
  \__, //_/ \__//_/    \___// .___/ \____/ \___//_/ /_/ \__,_//_/ /_/ /_/
 /____/                    /_/
-                                         Current gitrepoenum version v0.0.2
+                                         Current gitrepoenum version v0.0.3
 
 Fetch GitHub repositories of a single USER or multiple USERS using a list of usernames
 
@@ -201,7 +201,7 @@ Flags:
  / /_/ // // /_ / /   /  __// /_/ // /_/ //  __// / / // /_/ // / / / / /
  \__, //_/ \__//_/    \___// .___/ \____/ \___//_/ /_/ \__,_//_/ /_/ /_/
 /____/                    /_/
-                                         Current gitrepoenum version v0.0.2
+                                         Current gitrepoenum version v0.0.3
 
 Clone Git repositories and customize the directory name to username-repositoryname with an option to clone in parallel.
 
@@ -235,7 +235,7 @@ Flags:
  / /_/ // // /_ / /   /  __// /_/ // /_/ //  __// / / // /_/ // / / / / /
  \__, //_/ \__//_/    \___// .___/ \____/ \___//_/ /_/ \__,_//_/ /_/ /_/
 /____/                    /_/
-                                         Current gitrepoenum version v0.0.2
+                                         Current gitrepoenum version v0.0.3
 
 This command retrieves git commit logs based on date and time parameters.
 
@@ -279,7 +279,7 @@ Flags:
  / /_/ // // /_ / /   /  __// /_/ // /_/ //  __// / / // /_/ // / / / / /
  \__, //_/ \__//_/    \___// .___/ \____/ \___//_/ /_/ \__,_//_/ /_/ /_/
 /____/                    /_/
-                                         Current gitrepoenum version v0.0.2
+                                         Current gitrepoenum version v0.0.3
 
 This command fetches code from multiple commits based on a list in commits.txt for each repository.
 
@@ -308,7 +308,7 @@ Flags:
  / /_/ // // /_ / /   /  __// /_/ // /_/ //  __// / / // /_/ // / / / / /
  \__, //_/ \__//_/    \___// .___/ \____/ \___//_/ /_/ \__,_//_/ /_/ /_/
 /____/                    /_/
-                                         Current gitrepoenum version v0.0.2
+                                         Current gitrepoenum version v0.0.3
 
 This command scans multiple repositories for vulnerabilities using TruffleHog
 and saves the results in the specified output directory.
@@ -339,7 +339,7 @@ Flags:
  / /_/ // // /_ / /   /  __// /_/ // /_/ //  __// / / // /_/ // / / / / /
  \__, //_/ \__//_/    \___// .___/ \____/ \___//_/ /_/ \__,_//_/ /_/ /_/
 /____/                    /_/
-                                         Current gitrepoenum version v0.0.2
+                                         Current gitrepoenum version v0.0.3
 
 A comprehensive tool to monitor GitHub organizations, users, and members
 for potential leaks and vulnerabilities using trufflehog scanning.
