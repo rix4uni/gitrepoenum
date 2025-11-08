@@ -46,7 +46,7 @@ Or download [binary release](https://github.com/rix4uni/gitrepoenum/releases) fo
 
 ## Compile from source
 ```
-git clone --depth 1 github.com/rix4uni/gitrepoenum.git
+git clone --depth 1 https://github.com/rix4uni/gitrepoenum.git
 cd gitrepoenum; go install
 ```
 
