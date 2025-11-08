@@ -22,11 +22,11 @@ import (
 
 // Config and other types remain the same
 type Config struct {
-	TYPE      string `yaml:"TYPE"`
-	SORT      string `yaml:"SORT"`
-	DIRECTION string `yaml:"DIRECTION"`
-	PER_PAGE  int    `yaml:"PER_PAGE"`
-	PAGE      int    `yaml:"PAGE"`
+	TYPE        string `yaml:"TYPE"`
+	SORT        string `yaml:"SORT"`
+	DIRECTION   string `yaml:"DIRECTION"`
+	PER_PAGE    int    `yaml:"PER_PAGE"`
+	PAGE        int    `yaml:"PAGE"`
 	Private     string `yaml:"Private"`
 	HTMLURL     string `yaml:"HTMLURL"`
 	Description string `yaml:"Description"`
@@ -170,13 +170,20 @@ func parseDuration(durationStr string) (time.Duration, error) {
 	var duration time.Duration
 
 	switch unit {
-	case "s": duration = time.Duration(num) * time.Second
-	case "m": duration = time.Duration(num) * time.Minute
-	case "h": duration = time.Duration(num) * time.Hour
-	case "d": duration = time.Duration(num) * 24 * time.Hour
-	case "w": duration = time.Duration(num) * 7 * 24 * time.Hour
-	case "M": duration = time.Duration(num) * 30 * 24 * time.Hour
-	case "y": duration = time.Duration(num) * 365 * 24 * time.Hour
+	case "s":
+		duration = time.Duration(num) * time.Second
+	case "m":
+		duration = time.Duration(num) * time.Minute
+	case "h":
+		duration = time.Duration(num) * time.Hour
+	case "d":
+		duration = time.Duration(num) * 24 * time.Hour
+	case "w":
+		duration = time.Duration(num) * 7 * 24 * time.Hour
+	case "M":
+		duration = time.Duration(num) * 30 * 24 * time.Hour
+	case "y":
+		duration = time.Duration(num) * 365 * 24 * time.Hour
 	default:
 		return 0, fmt.Errorf("unknown time unit: %s", unit)
 	}
@@ -274,7 +281,7 @@ func fetchUserRepos(username string, config *Config, tokens []string, delay time
 
 	for {
 		token := getRandomToken(tokens)
-		apiURL := fmt.Sprintf("https://api.github.com/users/%s/repos?type=%s&sort=%s&direction=%s&per_page=%d&page=%d", 
+		apiURL := fmt.Sprintf("https://api.github.com/users/%s/repos?type=%s&sort=%s&direction=%s&per_page=%d&page=%d",
 			username, config.TYPE, config.SORT, config.DIRECTION, config.PER_PAGE, page)
 
 		req, err := http.NewRequest("GET", apiURL, nil)
@@ -364,7 +371,7 @@ func extractCommits(baseDir string, dateRange string) {
 				outputFile := filepath.Join(outputRepoDir, "commits.txt")
 
 				args := []string{"-C", repoPath, "--no-pager", "log", "--pretty=format:%H"}
-				
+
 				if dateRange != "all" {
 					re := regexp.MustCompile(`([0-9]+)([smhdwMy])`)
 					matches := re.FindStringSubmatch(dateRange)
@@ -373,13 +380,20 @@ func extractCommits(baseDir string, dateRange string) {
 						dateUnit := matches[2]
 						var gitTime string
 						switch dateUnit {
-						case "s": gitTime = fmt.Sprintf("%s seconds", dateNum)
-						case "m": gitTime = fmt.Sprintf("%s minutes", dateNum)
-						case "h": gitTime = fmt.Sprintf("%s hours", dateNum)
-						case "d": gitTime = fmt.Sprintf("%s days", dateNum)
-						case "w": gitTime = fmt.Sprintf("%s weeks", dateNum)
-						case "M": gitTime = fmt.Sprintf("%s months", dateNum)
-						case "y": gitTime = fmt.Sprintf("%s years", dateNum)
+						case "s":
+							gitTime = fmt.Sprintf("%s seconds", dateNum)
+						case "m":
+							gitTime = fmt.Sprintf("%s minutes", dateNum)
+						case "h":
+							gitTime = fmt.Sprintf("%s hours", dateNum)
+						case "d":
+							gitTime = fmt.Sprintf("%s days", dateNum)
+						case "w":
+							gitTime = fmt.Sprintf("%s weeks", dateNum)
+						case "M":
+							gitTime = fmt.Sprintf("%s months", dateNum)
+						case "y":
+							gitTime = fmt.Sprintf("%s years", dateNum)
 						}
 						if gitTime != "" {
 							args = append(args, "--before="+gitTime)
@@ -394,13 +408,13 @@ func extractCommits(baseDir string, dateRange string) {
 				}
 
 				os.WriteFile(outputFile, output, 0644)
-				
+
 				commits := strings.Split(strings.TrimSpace(string(output)), "\n")
 				commitCount := len(commits)
 				if commitCount == 1 && commits[0] == "" {
 					commitCount = 0
 				}
-				
+
 				fmt.Printf("%s[%d/%d]%s %s → %d commits\n", ColorBlue, currentRepo, totalRepos, ColorReset, entry.Name(), commitCount)
 			}
 		}
@@ -443,7 +457,7 @@ func extractCode(baseDir string) {
 		if entry.IsDir() {
 			repoName := entry.Name()
 			commitsFile := filepath.Join(commitsDir, repoName, "commits.txt")
-			
+
 			if _, err := os.Stat(commitsFile); os.IsNotExist(err) {
 				continue
 			}
@@ -475,7 +489,7 @@ func extractCode(baseDir string) {
 				processedCommits++
 				outputFilePath := filepath.Join(repoCodeDir, commit+".txt")
 				repoPath := filepath.Join(downloadDir, repoName)
-				
+
 				cmd := exec.Command("git", "-C", repoPath, "--no-pager", "show", commit)
 				output, err := cmd.Output()
 				if err != nil {
@@ -525,7 +539,7 @@ func scanVulnerabilities(baseDir string, notifyID string) {
 		if entry.IsDir() {
 			repoName := entry.Name()
 			codePath := filepath.Join(codeDir, repoName, "code")
-			
+
 			if _, err := os.Stat(codePath); os.IsNotExist(err) {
 				continue
 			}
@@ -539,7 +553,7 @@ func scanVulnerabilities(baseDir string, notifyID string) {
 			fmt.Printf("%s[%d/%d]%s Scanning: %s\n", ColorBlue, currentRepo, totalRepos, ColorReset, repoName)
 
 			trufflehogCmd := exec.Command("trufflehog", "filesystem", "--json", codePath)
-			
+
 			outputFile, err := os.Create(trufflehogOutputFile)
 			if err != nil {
 				continue
@@ -568,13 +582,13 @@ func scanVulnerabilities(baseDir string, notifyID string) {
 					"bash", "-c",
 					fmt.Sprintf(`cat %s | jq -r --arg repo "%s" --arg vulnFile "%s" 'select(.Verified==true) | "Repo: \($repo), VulnDir: \($vulnFile), Leaks: \(.DetectorName): \(.Raw)"'`, trufflehogOutputFile, repoURL, trufflehogOutputFile),
 				)
-				
+
 				output, err := cmd.Output()
 				if err == nil && len(output) > 0 {
 					// Group vulnerabilities by unique combinations to avoid duplicates
 					uniqueVulns := make(map[string]bool)
 					var formattedOutput []string
-					
+
 					lines := strings.Split(string(output), "\n")
 					for _, line := range lines {
 						if line != "" && !uniqueVulns[line] {
@@ -592,7 +606,7 @@ func scanVulnerabilities(baseDir string, notifyID string) {
 							)
 							notifyCmd.Run()
 						}
-						
+
 						fmt.Printf("%s✓%s Sent %d vulnerabilities to Discord\n", ColorGreen, ColorReset, len(formattedOutput))
 					} else {
 						fmt.Printf("%s!%s No verified vulnerabilities\n", ColorYellow, ColorReset)
@@ -616,13 +630,13 @@ func fetchData(username string, config *Config, tokens []string, delay time.Dura
 		token := getRandomToken(tokens)
 		var apiURL string
 		if scanType == "member" {
-			apiURL = fmt.Sprintf("https://api.github.com/orgs/%s/members?type=%s&sort=%s&direction=%s&per_page=%d&page=%d", 
+			apiURL = fmt.Sprintf("https://api.github.com/orgs/%s/members?type=%s&sort=%s&direction=%s&per_page=%d&page=%d",
 				username, config.TYPE, config.SORT, config.DIRECTION, config.PER_PAGE, page)
 		} else if scanType == "user" {
-			apiURL = fmt.Sprintf("https://api.github.com/users/%s/repos?type=%s&sort=%s&direction=%s&per_page=%d&page=%d", 
+			apiURL = fmt.Sprintf("https://api.github.com/users/%s/repos?type=%s&sort=%s&direction=%s&per_page=%d&page=%d",
 				username, config.TYPE, config.SORT, config.DIRECTION, config.PER_PAGE, page)
 		} else {
-			apiURL = fmt.Sprintf("https://api.github.com/orgs/%s/repos?type=%s&sort=%s&direction=%s&per_page=%d&page=%d", 
+			apiURL = fmt.Sprintf("https://api.github.com/orgs/%s/repos?type=%s&sort=%s&direction=%s&per_page=%d&page=%d",
 				username, config.TYPE, config.SORT, config.DIRECTION, config.PER_PAGE, page)
 		}
 
@@ -685,7 +699,7 @@ func fetchData(username string, config *Config, tokens []string, delay time.Dura
 func executeLeaksMonitor() {
 	scanTypes := strings.Split(scanType, ",")
 	validScanTypes := make([]string, 0)
-	
+
 	for _, st := range scanTypes {
 		st = strings.TrimSpace(st)
 		if st == "org" || st == "member" || st == "user" {
@@ -757,8 +771,13 @@ func executeLeaksMonitor() {
 			}
 
 			// Save output
-			homeDir, _ := os.UserHomeDir()
-			outputDir := filepath.Join(homeDir, ".gitrepoenum")
+			var outputDir string
+			if downloadDir != "" {
+				outputDir = downloadDir
+			} else {
+				homeDir, _ := os.UserHomeDir()
+				outputDir = filepath.Join(homeDir, ".gitrepoenum")
+			}
 			os.MkdirAll(outputDir, 0755)
 
 			var outputPath string
@@ -767,7 +786,7 @@ func executeLeaksMonitor() {
 			} else {
 				outputPath = filepath.Join(outputDir, fmt.Sprintf("%s-%s.json", username, currentScanType))
 			}
-			
+
 			if err := os.WriteFile(outputPath, output, 0644); err == nil {
 				fmt.Printf("%s✓%s Output saved to %s\n", ColorGreen, ColorReset, outputPath)
 			}
@@ -791,7 +810,7 @@ func executeLeaksMonitor() {
 	fmt.Printf("\n%s═══════════════════════════════════════════════════%s\n", ColorCyan, ColorReset)
 	fmt.Printf("%s                 STEP 2: CLONING%s\n", ColorCyan, ColorReset)
 	fmt.Printf("%s═══════════════════════════════════════════════════%s\n\n", ColorCyan, ColorReset)
-	
+
 	fmt.Printf("%s→%s Cloning %d repositories\n\n", ColorBlue, ColorReset, len(uniqueCloneURLs))
 
 	if downloadDir == "" {
