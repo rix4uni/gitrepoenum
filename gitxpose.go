@@ -6,13 +6,14 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"math/rand"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -59,9 +60,18 @@ type DiscordWebhook struct {
 	Content string `json:"content"`
 }
 
+var (
+	randSource         = rand.New(rand.NewSource(time.Now().UnixNano()))
+	randMutex          sync.Mutex
+	secretFileMutex    sync.Mutex
+	detectedSecretsMap map[string]bool
+	secretsMapLoaded   bool
+)
+
 func getRandomToken(tokens []string) string {
-	rand.Seed(time.Now().UnixNano())
-	return tokens[rand.Intn(len(tokens))]
+	randMutex.Lock()
+	defer randMutex.Unlock()
+	return tokens[randSource.Intn(len(tokens))]
 }
 
 func loadTokens(filePath string) ([]string, error) {
@@ -182,7 +192,234 @@ func filterRepos(repos []map[string]interface{}, createdDuration, updatedDuratio
 	return filtered
 }
 
-func fetchRepos(scanType, username string, tokens []string, delay time.Duration, createdFilter, updatedFilter, pushedFilter string, noFork bool) ([]byte, error) {
+// calculateOptimalParallelism calculates optimal parallelism based on system resources
+func calculateOptimalParallelism(maxParallel int, autoScale bool) int {
+	if !autoScale && maxParallel > 0 {
+		return maxParallel
+	}
+
+	cpuCores := runtime.NumCPU()
+	if cpuCores < 1 {
+		cpuCores = 1
+	}
+
+	// Default to CPU cores * 2 for I/O bound operations
+	optimal := cpuCores * 2
+
+	// If maxParallel is set, use the minimum
+	if maxParallel > 0 && optimal > maxParallel {
+		optimal = maxParallel
+	}
+
+	// Minimum of 1, maximum reasonable limit
+	if optimal < 1 {
+		optimal = 1
+	}
+	if optimal > 100 {
+		optimal = 100
+	}
+
+	return optimal
+}
+
+// fetchReposParallel fetches GitHub API pages in parallel
+func fetchReposParallel(scanType, username string, tokens []string, apiParallel int, createdFilter, updatedFilter, pushedFilter string, noFork bool, client *http.Client) ([]byte, error) {
+	type pageResult struct {
+		page  int
+		repos []map[string]interface{}
+		err   error
+	}
+
+	// First, fetch page 1 to determine total pages
+	token := getRandomToken(tokens)
+	apiURL := buildAPIURL(scanType, username, 1)
+	req, err := http.NewRequest("GET", apiURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "token "+token)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check rate limit headers
+	rateLimitRemaining := resp.Header.Get("X-RateLimit-Remaining")
+	rateLimitReset := resp.Header.Get("X-RateLimit-Reset")
+
+	if resp.StatusCode != http.StatusOK {
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+		return nil, fmt.Errorf("%sfailed to fetch repos: %s%s", ColorRed, resp.Status, ColorReset)
+	}
+
+	var firstPageRepos []map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&firstPageRepos); err != nil {
+		resp.Body.Close()
+		return nil, err
+	}
+	resp.Body.Close()
+
+	if len(firstPageRepos) == 0 {
+		// No repos found
+		createdDuration, _ := parseDuration(createdFilter)
+		updatedDuration, _ := parseDuration(updatedFilter)
+		pushedDuration, _ := parseDuration(pushedFilter)
+		filteredRepos := filterRepos([]map[string]interface{}{}, createdDuration, updatedDuration, pushedDuration, noFork)
+		return printCleanOutput(username, filteredRepos)
+	}
+
+	// Determine if there are more pages (GitHub returns 30 per page by default)
+	hasMorePages := len(firstPageRepos) == 30
+	totalPages := 1
+	if hasMorePages {
+		// Estimate total pages - we'll fetch until we get an empty page
+		totalPages = 10 // Start with reasonable estimate, will adjust
+	}
+
+	allRepos := make([]map[string]interface{}, 0, len(firstPageRepos)*totalPages)
+	allRepos = append(allRepos, firstPageRepos...)
+
+	if !hasMorePages {
+		// Only one page, process and return
+		createdDuration, _ := parseDuration(createdFilter)
+		updatedDuration, _ := parseDuration(updatedFilter)
+		pushedDuration, _ := parseDuration(pushedFilter)
+		filteredRepos := filterRepos(allRepos, createdDuration, updatedDuration, pushedDuration, noFork)
+		return printCleanOutput(username, filteredRepos)
+	}
+
+	// Fetch remaining pages in parallel
+	pageChan := make(chan int, apiParallel*2)
+	resultChan := make(chan pageResult, apiParallel*2)
+	var wg sync.WaitGroup
+	var reposMutex sync.Mutex
+
+	// Worker pool for fetching pages
+	for i := 0; i < apiParallel; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for page := range pageChan {
+				token := getRandomToken(tokens)
+				apiURL := buildAPIURL(scanType, username, page)
+				req, err := http.NewRequest("GET", apiURL, nil)
+				if err != nil {
+					resultChan <- pageResult{page: page, err: err}
+					continue
+				}
+				req.Header.Set("Authorization", "token "+token)
+
+				resp, err := client.Do(req)
+				if err != nil {
+					resultChan <- pageResult{page: page, err: err}
+					continue
+				}
+
+				if resp.StatusCode != http.StatusOK {
+					io.Copy(io.Discard, resp.Body)
+					resp.Body.Close()
+					resultChan <- pageResult{page: page, err: fmt.Errorf("status: %s", resp.Status)}
+					continue
+				}
+
+				var repos []map[string]interface{}
+				if err := json.NewDecoder(resp.Body).Decode(&repos); err != nil {
+					resp.Body.Close()
+					resultChan <- pageResult{page: page, err: err}
+					continue
+				}
+				resp.Body.Close()
+
+				resultChan <- pageResult{page: page, repos: repos}
+			}
+		}()
+	}
+
+	// Start fetching pages
+	page := 2
+	activePages := 0
+	pageResults := make(map[int][]map[string]interface{})
+
+	// Send initial batch of pages
+	for i := 0; i < apiParallel && page <= totalPages; i++ {
+		pageChan <- page
+		activePages++
+		page++
+	}
+
+	// Collect results and send more pages as needed
+	done := false
+	for !done || activePages > 0 {
+		result := <-resultChan
+		activePages--
+		if result.err != nil {
+			// On error, continue with other pages
+			continue
+		}
+
+		if len(result.repos) == 0 {
+			// Empty page means we're done
+			done = true
+			continue
+		}
+
+		reposMutex.Lock()
+		pageResults[result.page] = result.repos
+		reposMutex.Unlock()
+
+		// If we got a full page, there might be more
+		if len(result.repos) == 30 && !done {
+			if page <= totalPages+5 { // Allow some buffer
+				pageChan <- page
+				activePages++
+				page++
+			}
+		}
+	}
+
+	close(pageChan)
+	wg.Wait()
+	close(resultChan)
+
+	// Collect all repos in order
+	for p := 2; p < page; p++ {
+		if repos, ok := pageResults[p]; ok {
+			allRepos = append(allRepos, repos...)
+		}
+	}
+
+	// Parse duration filters with proper error handling
+	createdDuration, err := parseDuration(createdFilter)
+	if err != nil {
+		return nil, fmt.Errorf("%serror parsing created filter: %v%s", ColorRed, err, ColorReset)
+	}
+	updatedDuration, err := parseDuration(updatedFilter)
+	if err != nil {
+		return nil, fmt.Errorf("%serror parsing updated filter: %v%s", ColorRed, err, ColorReset)
+	}
+	pushedDuration, err := parseDuration(pushedFilter)
+	if err != nil {
+		return nil, fmt.Errorf("%serror parsing pushed filter: %v%s", ColorRed, err, ColorReset)
+	}
+
+	filteredRepos := filterRepos(allRepos, createdDuration, updatedDuration, pushedDuration, noFork)
+
+	// Use rate limit info if available (for future adaptive rate limiting)
+	_ = rateLimitRemaining
+	_ = rateLimitReset
+
+	return printCleanOutput(username, filteredRepos)
+}
+
+func fetchRepos(scanType, username string, tokens []string, delay time.Duration, createdFilter, updatedFilter, pushedFilter string, noFork bool, apiParallel int, client *http.Client) ([]byte, error) {
+	// Use parallel fetching if apiParallel > 1, otherwise use sequential
+	if apiParallel > 1 {
+		return fetchReposParallel(scanType, username, tokens, apiParallel, createdFilter, updatedFilter, pushedFilter, noFork, client)
+	}
+
+	// Fallback to sequential for backward compatibility
 	var allRepos []map[string]interface{}
 	page := 1
 
@@ -197,21 +434,23 @@ func fetchRepos(scanType, username string, tokens []string, delay time.Duration,
 
 		req.Header.Set("Authorization", "token "+token)
 
-		client := &http.Client{}
 		resp, err := client.Do(req)
 		if err != nil {
 			return nil, err
 		}
-		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
+			io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
 			return nil, fmt.Errorf("%sfailed to fetch repos: %s%s", ColorRed, resp.Status, ColorReset)
 		}
 
 		var repos []map[string]interface{}
 		if err := json.NewDecoder(resp.Body).Decode(&repos); err != nil {
+			resp.Body.Close()
 			return nil, err
 		}
+		resp.Body.Close()
 
 		if len(repos) == 0 {
 			break
@@ -219,12 +458,23 @@ func fetchRepos(scanType, username string, tokens []string, delay time.Duration,
 
 		allRepos = append(allRepos, repos...)
 		page++
-		time.Sleep(delay)
+		if delay > 0 {
+			time.Sleep(delay)
+		}
 	}
 
-	createdDuration, _ := parseDuration(createdFilter)
-	updatedDuration, _ := parseDuration(updatedFilter)
-	pushedDuration, _ := parseDuration(pushedFilter)
+	createdDuration, err := parseDuration(createdFilter)
+	if err != nil {
+		return nil, fmt.Errorf("%serror parsing created filter: %v%s", ColorRed, err, ColorReset)
+	}
+	updatedDuration, err := parseDuration(updatedFilter)
+	if err != nil {
+		return nil, fmt.Errorf("%serror parsing updated filter: %v%s", ColorRed, err, ColorReset)
+	}
+	pushedDuration, err := parseDuration(pushedFilter)
+	if err != nil {
+		return nil, fmt.Errorf("%serror parsing pushed filter: %v%s", ColorRed, err, ColorReset)
+	}
 
 	filteredRepos := filterRepos(allRepos, createdDuration, updatedDuration, pushedDuration, noFork)
 
@@ -307,7 +557,7 @@ func fetchCommitContent(repoPath string, commitHash string, outputFilePath strin
 		return fmt.Errorf("%serror fetching commit %s: %v%s", ColorRed, commitHash, err, ColorReset)
 	}
 
-	err = ioutil.WriteFile(outputFilePath, output, 0644)
+	err = os.WriteFile(outputFilePath, output, 0644)
 	if err != nil {
 		return fmt.Errorf("%serror writing commit to file: %v%s", ColorRed, err, ColorReset)
 	}
@@ -315,14 +565,14 @@ func fetchCommitContent(repoPath string, commitHash string, outputFilePath strin
 	return nil
 }
 
-func processRepoCommits(repoPath string) error {
+func processRepoCommits(repoPath string, commitParallel int) error {
 	commitsFile := filepath.Join(repoPath, "commits.txt")
 
 	if _, err := os.Stat(commitsFile); os.IsNotExist(err) {
 		return fmt.Errorf("%scommits.txt not found in %s%s", ColorRed, repoPath, ColorReset)
 	}
 
-	content, err := ioutil.ReadFile(commitsFile)
+	content, err := os.ReadFile(commitsFile)
 	if err != nil {
 		return fmt.Errorf("error reading commits file: %v", err)
 	}
@@ -333,14 +583,73 @@ func processRepoCommits(repoPath string) error {
 		return fmt.Errorf("error creating code directory: %v", err)
 	}
 
+	// Filter out empty commits
+	validCommits := make([]string, 0, len(commits))
 	for _, commit := range commits {
-		if strings.TrimSpace(commit) == "" {
-			continue
+		if strings.TrimSpace(commit) != "" {
+			validCommits = append(validCommits, strings.TrimSpace(commit))
 		}
+	}
 
+	if len(validCommits) == 0 {
+		return nil
+	}
+
+	// Process commits in parallel if commitParallel > 1
+	if commitParallel > 1 && len(validCommits) > 1 {
+		return processCommitsParallel(repoPath, validCommits, commitParallel, codeDir)
+	}
+
+	// Sequential processing
+	for _, commit := range validCommits {
 		outputFilePath := filepath.Join(codeDir, commit+".txt")
 		if err := fetchCommitContent(repoPath, commit, outputFilePath); err != nil {
 			return err
+		}
+	}
+
+	return nil
+}
+
+func processCommitsParallel(repoPath string, commits []string, commitParallel int, codeDir string) error {
+	type commitResult struct {
+		commit string
+		err    error
+	}
+
+	commitChan := make(chan string, len(commits))
+	resultChan := make(chan commitResult, len(commits))
+	var wg sync.WaitGroup
+
+	// Worker pool
+	for i := 0; i < commitParallel; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for commit := range commitChan {
+				outputFilePath := filepath.Join(codeDir, commit+".txt")
+				err := fetchCommitContent(repoPath, commit, outputFilePath)
+				resultChan <- commitResult{commit: commit, err: err}
+			}
+		}()
+	}
+
+	// Send commits to workers
+	for _, commit := range commits {
+		commitChan <- commit
+	}
+	close(commitChan)
+
+	// Collect results
+	go func() {
+		wg.Wait()
+		close(resultChan)
+	}()
+
+	// Check for errors
+	for result := range resultChan {
+		if result.err != nil {
+			return result.err
 		}
 	}
 
@@ -363,6 +672,9 @@ func sendDiscordNotification(webhookURL, message string) error {
 	}
 	defer resp.Body.Close()
 
+	// Drain response body
+	io.Copy(io.Discard, resp.Body)
+
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
 		return fmt.Errorf("%sdiscord webhook returned status: %d%s", ColorRed, resp.StatusCode, ColorReset)
 	}
@@ -370,9 +682,107 @@ func sendDiscordNotification(webhookURL, message string) error {
 	return nil
 }
 
+// loadDetectedSecrets loads detected secrets from file into a map for O(1) lookup
+func loadDetectedSecrets(filePath string) (map[string]bool, error) {
+	secretsMap := make(map[string]bool)
+
+	// If file doesn't exist, return empty map (no secrets detected yet)
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		return secretsMap, nil
+	}
+
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		// If read fails, return empty map (assume no secrets detected yet)
+		return secretsMap, nil
+	}
+
+	lines := strings.Split(string(content), "\n")
+	for _, line := range lines {
+		secret := strings.TrimSpace(line)
+		if secret != "" {
+			secretsMap[secret] = true
+		}
+	}
+
+	return secretsMap, nil
+}
+
+// saveDetectedSecret appends a new secret to the detected secrets file (thread-safe)
+func saveDetectedSecret(filePath string, secret string) error {
+	secretFileMutex.Lock()
+	defer secretFileMutex.Unlock()
+
+	// Ensure directory exists
+	dir := filepath.Dir(filePath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create secrets directory: %v", err)
+	}
+
+	// Open file in append mode, create if it doesn't exist
+	file, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open secrets file: %v", err)
+	}
+	defer file.Close()
+
+	// Write secret with newline
+	_, err = file.WriteString(secret + "\n")
+	if err != nil {
+		return fmt.Errorf("failed to write secret to file: %v", err)
+	}
+
+	return nil
+}
+
+// isSecretAlreadyDetected checks if a secret already exists in the map
+func isSecretAlreadyDetected(secret string, secretsMap map[string]bool) bool {
+	return secretsMap[secret]
+}
+
+// getDetectedSecretsFilePath returns the path to the detected secrets file
+func getDetectedSecretsFilePath() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get home directory: %v", err)
+	}
+	return filepath.Join(homeDir, ".config", "gitxpose", "detected-secrets.txt"), nil
+}
+
+// ensureSecretsMapLoaded loads the secrets map if not already loaded (thread-safe)
+func ensureSecretsMapLoaded() error {
+	secretFileMutex.Lock()
+	defer secretFileMutex.Unlock()
+
+	if secretsMapLoaded {
+		return nil
+	}
+
+	secretsFilePath, err := getDetectedSecretsFilePath()
+	if err != nil {
+		// If we can't get the path, start with empty map
+		detectedSecretsMap = make(map[string]bool)
+		secretsMapLoaded = true
+		return nil
+	}
+
+	detectedSecretsMap, err = loadDetectedSecrets(secretsFilePath)
+	if err != nil {
+		// If load fails, start with empty map
+		detectedSecretsMap = make(map[string]bool)
+	}
+	secretsMapLoaded = true
+
+	return nil
+}
+
 func getDiscordWebhookURL(notifyID string) (string, error) {
-	configPath := filepath.Join(os.Getenv("HOME"), ".config", "notify", "provider-config.yaml")
-	content, err := ioutil.ReadFile(configPath)
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("%sfailed to get home directory: %v%s", ColorRed, err, ColorReset)
+	}
+	configPath := filepath.Join(homeDir, ".config", "notify", "provider-config.yaml")
+	content, err := os.ReadFile(configPath)
 	if err != nil {
 		return "", fmt.Errorf("%sfailed to read notify config: %v%s", ColorRed, err, ColorReset)
 	}
@@ -457,6 +867,12 @@ func scanRepoForVulnerabilities(repoPath string, notifyID string) error {
 	}
 
 	if notifyID != "" {
+		// Load detected secrets map if not already loaded
+		if err := ensureSecretsMapLoaded(); err != nil {
+			// Log error but continue - don't block scanning
+			fmt.Printf("  %s⚠ Warning:%s Failed to load detected secrets: %v\n", ColorYellow, ColorReset, err)
+		}
+
 		webhookURL, err := getDiscordWebhookURL(notifyID)
 		if err != nil {
 			fmt.Printf("  %s✗ Error:%s %v\n", ColorRed, ColorReset, err)
@@ -466,9 +882,15 @@ func scanRepoForVulnerabilities(repoPath string, notifyID string) error {
 		repoName := filepath.Base(repoPath)
 		username := filepath.Base(filepath.Dir(repoPath))
 
-		content, err := ioutil.ReadFile(trufflehogOutputFile)
+		content, err := os.ReadFile(trufflehogOutputFile)
 		if err != nil {
 			return fmt.Errorf("%serror reading trufflehog output: %v%s", ColorRed, err, ColorReset)
+		}
+
+		secretsFilePath, err := getDetectedSecretsFilePath()
+		if err != nil {
+			// Log error but continue - don't block scanning
+			fmt.Printf("  %s⚠ Warning:%s Failed to get secrets file path: %v\n", ColorYellow, ColorReset, err)
 		}
 
 		lines := strings.Split(string(content), "\n")
@@ -483,27 +905,60 @@ func scanRepoForVulnerabilities(repoPath string, notifyID string) error {
 			}
 
 			if result.Verified {
+				secret := strings.TrimSpace(result.Raw)
+				if secret == "" {
+					continue
+				}
+
+				// Check if secret already detected and mark as detected atomically (thread-safe)
+				secretFileMutex.Lock()
+				alreadyDetected := isSecretAlreadyDetected(secret, detectedSecretsMap)
+				if !alreadyDetected {
+					// Mark as detected immediately to prevent duplicate processing
+					detectedSecretsMap[secret] = true
+				}
+				secretFileMutex.Unlock()
+
+				if alreadyDetected {
+					// Secret already detected, skip notification
+					continue
+				}
+
+				// New secret detected - send notification and save
 				message := fmt.Sprintf("**[VERIFIED SECRET FOUND]**\n"+
 					"🔍 **Repo:** %s/%s\n"+
 					"🔑 **Detector:** %s\n"+
 					"📝 **Description:** %s\n"+
 					"📄 **File:** %s\n"+
 					"📍 **Line:** %d\n"+
-					"🔐 **Secret:** `%s\n\n\n`",
+					"🔐 **Secret:** `%s\n`",
 					username, repoName,
 					result.DetectorName,
 					result.DetectorDescription,
 					result.SourceMetadata.Data.Filesystem.File,
 					result.SourceMetadata.Data.Filesystem.Line,
-					result.Raw)
+					secret)
 
 				if err := sendDiscordNotification(webhookURL, message); err != nil {
 					fmt.Printf("  %s✗ Notification failed:%s %v\n", ColorRed, ColorReset, err)
+					// Remove from map if notification failed (so it can be retried later)
+					secretFileMutex.Lock()
+					delete(detectedSecretsMap, secret)
+					secretFileMutex.Unlock()
 				} else {
 					fmt.Printf("  %s🔔 Notified:%s Verified secret sent to Discord\n", ColorGreen, ColorReset)
+
+					// Save secret to file (thread-safe, map already updated)
+					if secretsFilePath != "" {
+						if err := saveDetectedSecret(secretsFilePath, secret); err != nil {
+							fmt.Printf("  %s⚠ Warning:%s Failed to save secret: %v\n", ColorYellow, ColorReset, err)
+							// Note: We keep it in the map even if file save fails to avoid duplicate notifications
+						}
+					}
 				}
 
-				time.Sleep(1 * time.Second)
+				// Reduced delay for notifications - can be parallelized
+				time.Sleep(500 * time.Millisecond)
 			}
 		}
 	}
@@ -545,10 +1000,10 @@ func runGitLog(repoPath string, gitTime string, outputFile string) error {
 		return fmt.Errorf("%serror executing git log: %v%s", ColorRed, err, ColorReset)
 	}
 
-	return ioutil.WriteFile(outputFile, output, 0644)
+	return os.WriteFile(outputFile, output, 0644)
 }
 
-func fetchCommitsForRepo(repoPath string, dateFlag string, vulnNotifyID string) error {
+func fetchCommitsForRepo(repoPath string, dateFlag string, vulnNotifyID string, commitParallel int) error {
 	outputFile := filepath.Join(repoPath, "commits.txt")
 	repoName := filepath.Base(repoPath)
 
@@ -577,7 +1032,7 @@ func fetchCommitsForRepo(repoPath string, dateFlag string, vulnNotifyID string) 
 	}
 
 	fmt.Printf("  %s📦 Fetching code:%s %s\n", ColorCyan, ColorReset, repoName)
-	if err := processRepoCommits(repoPath); err != nil {
+	if err := processRepoCommits(repoPath, commitParallel); err != nil {
 		return fmt.Errorf("%serror fetching commit content: %v%s", ColorRed, err, ColorReset)
 	}
 
@@ -588,7 +1043,7 @@ func fetchCommitsForRepo(repoPath string, dateFlag string, vulnNotifyID string) 
 	return nil
 }
 
-func cloneRepositories(repoURLs []string, parallel int, dateFlag string, username string, vulnNotifyID string) {
+func cloneRepositories(repoURLs []string, parallel int, dateFlag string, username string, vulnNotifyID string, analysisParallel int, commitParallel int, outputDir string) {
 	sem := make(chan struct{}, parallel)
 	var wg sync.WaitGroup
 	var clonedRepos []string
@@ -613,7 +1068,7 @@ func cloneRepositories(repoURLs []string, parallel int, dateFlag string, usernam
 			}
 
 			reponame := strings.TrimSuffix(parts[len(parts)-1], ".git")
-			dirName := filepath.Join(os.Getenv("HOME"), ".gitxpose", username, reponame)
+			dirName := filepath.Join(outputDir, username, reponame)
 
 			if _, err := os.Stat(dirName); !os.IsNotExist(err) {
 				fmt.Printf("%s⚠ Removing existing:%s %s\n", ColorYellow, ColorReset, reponame)
@@ -648,14 +1103,20 @@ func cloneRepositories(repoURLs []string, parallel int, dateFlag string, usernam
 
 		printHeader("ANALYZING REPOSITORIES")
 
-		for i, repoPath := range clonedRepos {
-			fmt.Printf("\n%s[%d/%d]%s Processing: %s%s%s\n", ColorBlue, i+1, len(clonedRepos), ColorReset, ColorBold, filepath.Base(repoPath), ColorReset)
-			printSeparator()
+		// Parallelize repository analysis
+		if analysisParallel > 1 {
+			analyzeReposParallel(clonedRepos, dateFlag, vulnNotifyID, analysisParallel, commitParallel)
+		} else {
+			// Sequential analysis for backward compatibility
+			for i, repoPath := range clonedRepos {
+				fmt.Printf("\n%s[%d/%d]%s Processing: %s%s%s\n", ColorBlue, i+1, len(clonedRepos), ColorReset, ColorBold, filepath.Base(repoPath), ColorReset)
+				printSeparator()
 
-			if err := fetchCommitsForRepo(repoPath, dateFlag, vulnNotifyID); err != nil {
-				fmt.Printf("%s✗ Analysis failed:%s %v\n", ColorRed, ColorReset, err)
-			} else {
-				fmt.Printf("%s✓ Completed:%s %s\n", ColorGreen, ColorReset, filepath.Base(repoPath))
+				if err := fetchCommitsForRepo(repoPath, dateFlag, vulnNotifyID, commitParallel); err != nil {
+					fmt.Printf("%s✗ Analysis failed:%s %v\n", ColorRed, ColorReset, err)
+				} else {
+					fmt.Printf("%s✓ Completed:%s %s\n", ColorGreen, ColorReset, filepath.Base(repoPath))
+				}
 			}
 		}
 
@@ -663,16 +1124,77 @@ func cloneRepositories(repoURLs []string, parallel int, dateFlag string, usernam
 	}
 }
 
+func analyzeReposParallel(clonedRepos []string, dateFlag string, vulnNotifyID string, analysisParallel int, commitParallel int) {
+	type repoResult struct {
+		index int
+		path  string
+		err   error
+	}
+
+	repoChan := make(chan repoResult, len(clonedRepos))
+	var wg sync.WaitGroup
+	var printMutex sync.Mutex
+
+	// Worker pool for analyzing repositories
+	for i := 0; i < analysisParallel; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for result := range repoChan {
+				repoPath := result.path
+				repoName := filepath.Base(repoPath)
+
+				printMutex.Lock()
+				fmt.Printf("\n%s[%d/%d]%s Processing: %s%s%s\n", ColorBlue, result.index+1, len(clonedRepos), ColorReset, ColorBold, repoName, ColorReset)
+				printSeparator()
+				printMutex.Unlock()
+
+				err := fetchCommitsForRepo(repoPath, dateFlag, vulnNotifyID, commitParallel)
+
+				printMutex.Lock()
+				if err != nil {
+					fmt.Printf("%s✗ Analysis failed:%s %v\n", ColorRed, ColorReset, err)
+				} else {
+					fmt.Printf("%s✓ Completed:%s %s\n", ColorGreen, ColorReset, repoName)
+				}
+				printMutex.Unlock()
+			}
+		}()
+	}
+
+	// Send repos to workers
+	for i, repoPath := range clonedRepos {
+		repoChan <- repoResult{index: i, path: repoPath}
+	}
+	close(repoChan)
+
+	wg.Wait()
+}
+
 func main() {
 	scanRepoType := flag.String("scan-repo", "", "Type of scan: org, member, or user (required)")
-	tokenFile := flag.String("token", filepath.Join(os.Getenv("HOME"), ".config", "gitxpose", "github-token.txt"), "Path to the file containing GitHub tokens")
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		homeDir = os.Getenv("HOME")
+		if homeDir == "" {
+			homeDir = "."
+		}
+	}
+
+	tokenFile := flag.String("token", filepath.Join(homeDir, ".config", "gitxpose", "github-token.txt"), "Path to the file containing GitHub tokens")
 	delayFlag := flag.String("delay", "-1ns", "Delay duration between requests")
-	outputFile := flag.String("output", filepath.Join(os.Getenv("HOME"), ".gitxpose")+"/", "Directory to save the output")
+	outputFile := flag.String("output", filepath.Join(homeDir, ".gitxpose")+"/", "Directory to save the output")
 	createdFilter := flag.String("created", "", "Filter repos created within duration (e.g., 1h, 7d, 1m, 1y)")
 	updatedFilter := flag.String("updated", "", "Filter repos updated within duration")
 	pushedFilter := flag.String("pushed", "", "Filter repos pushed within duration")
 	noForkFlag := flag.Bool("no-fork", false, "Exclude forked repositories")
 	downloadParallel := flag.Int("parallel", 10, "Number of repositories to clone in parallel")
+	maxParallel := flag.Int("max-parallel", 0, "Maximum parallelism (0 = auto-detect based on system resources)")
+	autoScale := flag.Bool("auto-scale", true, "Enable automatic scaling based on system resources")
+	apiParallel := flag.Int("api-parallel", 1, "Parallelism for API requests (0 = auto-detect / 2)")
+	analysisParallel := flag.Int("analysis-parallel", 0, "Parallelism for repository analysis (0 = auto-detect)")
+	commitParallel := flag.Int("commit-parallel", 0, "Parallelism for commit processing (0 = auto-detect / 2)")
 	dateFilter := flag.String("date", "all", "Fetch commits from repositories (e.g., 50s, 40m, 5h, 1d, 2w, 3M, 1y, all)")
 	vulnNotifyID := flag.String("id", "", "Send verified vulnerabilities to Discord")
 	silent := flag.Bool("silent", false, "Silent mode.")
@@ -720,17 +1242,108 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Calculate optimal parallelism
+	optimalParallel := calculateOptimalParallelism(*maxParallel, *autoScale)
+	if *downloadParallel <= 0 {
+		*downloadParallel = optimalParallel
+	}
+	if *apiParallel <= 0 {
+		*apiParallel = optimalParallel / 2
+		if *apiParallel < 1 {
+			*apiParallel = 1
+		}
+	}
+	if *analysisParallel <= 0 {
+		*analysisParallel = optimalParallel
+	}
+	if *commitParallel <= 0 {
+		*commitParallel = optimalParallel / 2
+		if *commitParallel < 1 {
+			*commitParallel = 1
+		}
+	}
+
+	// Create reusable HTTP client with connection pooling
+	httpClient := &http.Client{
+		Timeout: 30 * time.Second,
+		Transport: &http.Transport{
+			MaxIdleConns:        *apiParallel * 2,
+			MaxIdleConnsPerHost: *apiParallel,
+			IdleConnTimeout:     90 * time.Second,
+		},
+	}
+
 	outputFileExpanded := os.ExpandEnv(*outputFile)
 
-	outputDir := outputFileExpanded
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
-		fmt.Printf("%sError creating directory: %v%s\n", ColorRed, err, ColorReset)
-		os.Exit(1)
+	// Get current working directory for relative paths
+	currentDir, err := os.Getwd()
+	if err != nil {
+		// If we can't get current directory, fall back to home directory
+		currentDir = homeDir
+	}
+
+	// Determine if output is a directory (has trailing slash) or a file
+	// Also check if it's the default .gitxpose directory
+	defaultOutputDir := filepath.Join(homeDir, ".gitxpose") + "/"
+	hasTrailingSlash := strings.HasSuffix(outputFileExpanded, "/")
+
+	// Build the full path to check if it exists
+	var fullPathToCheck string
+	if filepath.IsAbs(outputFileExpanded) {
+		fullPathToCheck = outputFileExpanded
+	} else {
+		fullPathToCheck = filepath.Join(currentDir, outputFileExpanded)
+	}
+
+	// Check if the path exists and is a directory
+	var isDirectory bool
+	if hasTrailingSlash || outputFileExpanded == defaultOutputDir {
+		isDirectory = true
+	} else {
+		// Check if path exists and is a directory
+		if info, err := os.Stat(fullPathToCheck); err == nil {
+			isDirectory = info.IsDir()
+		} else {
+			// Path doesn't exist - create it as a directory since user wants all output there
+			// This allows users to specify a directory name without trailing slash
+			isDirectory = true
+		}
+	}
+
+	var outputDir string
+	if isDirectory {
+		// It's a directory
+		if filepath.IsAbs(outputFileExpanded) {
+			// Absolute path - use as is (remove trailing slash if present)
+			outputDir = strings.TrimSuffix(outputFileExpanded, "/")
+		} else {
+			// Relative path - use current working directory (remove trailing slash if present)
+			outputDir = filepath.Join(currentDir, strings.TrimSuffix(outputFileExpanded, "/"))
+		}
+		if err := os.MkdirAll(outputDir, 0755); err != nil {
+			fmt.Printf("%sError creating directory: %v%s\n", ColorRed, err, ColorReset)
+			os.Exit(1)
+		}
+	} else {
+		// It's a file, determine the output directory for repos
+		// Use a directory with the same base name as the file (without extension)
+		if filepath.IsAbs(outputFileExpanded) {
+			// Absolute path - use parent directory with base name
+			baseName := strings.TrimSuffix(filepath.Base(outputFileExpanded), filepath.Ext(outputFileExpanded))
+			outputDir = filepath.Join(filepath.Dir(outputFileExpanded), baseName)
+		} else {
+			// Relative path - use current directory with base name
+			baseName := strings.TrimSuffix(filepath.Base(outputFileExpanded), filepath.Ext(outputFileExpanded))
+			outputDir = filepath.Join(currentDir, baseName)
+		}
+		// Ensure the directory exists
+		if err := os.MkdirAll(outputDir, 0755); err != nil {
+			fmt.Printf("%sError creating directory: %v%s\n", ColorRed, err, ColorReset)
+			os.Exit(1)
+		}
 	}
 
 	scanner := bufio.NewScanner(os.Stdin)
-
-	isDirectory := strings.HasSuffix(outputFileExpanded, "/") || outputFileExpanded == filepath.Join(os.Getenv("HOME"), ".gitxpose")+"/"
 
 	var allReposOutput []byte
 	var allCloneURLs []string
@@ -740,7 +1353,7 @@ func main() {
 		username := scanner.Text()
 		currentUsername = username
 
-		output, err := fetchRepos(*scanRepoType, username, tokens, delay, *createdFilter, *updatedFilter, *pushedFilter, *noForkFlag)
+		output, err := fetchRepos(*scanRepoType, username, tokens, delay, *createdFilter, *updatedFilter, *pushedFilter, *noForkFlag, *apiParallel, httpClient)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%s✗ Error fetching repos for %s: %v%s\n", ColorRed, username, err, ColorReset)
 			continue
@@ -770,7 +1383,7 @@ func main() {
 				continue
 			}
 
-			outputPath := filepath.Join(userDir, "fetchrepo.json")
+			outputPath := filepath.Join(userDir, fmt.Sprintf("%s_repo.json", username))
 			if err := os.WriteFile(outputPath, output, 0644); err != nil {
 				fmt.Fprintf(os.Stderr, "%s✗ Error writing to file %s: %v%s\n", ColorRed, outputPath, err, ColorReset)
 			} else {
@@ -784,8 +1397,8 @@ func main() {
 	if !isDirectory {
 		outputPath := outputFileExpanded
 		if !filepath.IsAbs(outputFileExpanded) {
-			homeDir, _ := os.UserHomeDir()
-			outputPath = filepath.Join(homeDir, ".gitxpose", outputFileExpanded)
+			// Relative path - use current working directory
+			outputPath = filepath.Join(currentDir, outputFileExpanded)
 		}
 
 		if err := os.WriteFile(outputPath, allReposOutput, 0644); err != nil {
@@ -800,7 +1413,8 @@ func main() {
 	}
 
 	if len(allCloneURLs) > 0 {
-		cloneRepositories(allCloneURLs, *downloadParallel, *dateFilter, currentUsername, *vulnNotifyID)
+		// Use outputDir for cloning repositories (already set correctly for both file and directory cases)
+		cloneRepositories(allCloneURLs, *downloadParallel, *dateFilter, currentUsername, *vulnNotifyID, *analysisParallel, *commitParallel, outputDir)
 
 		printSeparator()
 		fmt.Printf("\n%s🎉 All operations completed successfully!%s\n\n", ColorGreen+ColorBold, ColorReset)
